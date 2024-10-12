@@ -1,0 +1,221 @@
+-- Create Table and Import Data
+
+drop table if exists layoffs ;
+create table layoffs(
+    company varchar(50),
+    location varchar(50),
+    industry varchar(50),
+    total_laid varchar(50),
+    percentage varchar(50),
+    date varchar(50),
+    stage varchar(50),
+    country varchar(50),
+    funds_raised_millions varchar(50)
+)
+
+select * from layoffs
+
+
+-- Create new table for cleaning the raw data
+
+drop table if exists layoffs_staging ;
+create table layoffs_staging(
+    company varchar(50),
+    location varchar(50),
+    industry varchar(50),
+    total_laid varchar(50),
+    percentage varchar(50),
+    date varchar(50),
+    stage varchar(50),
+    country varchar(50),
+    funds_raised_millions varchar(50)
+)
+
+INSERT INTO layoffs_staging(
+select * from layoffs
+)
+
+select * from layoffs_staging
+
+-- Identifying the duplicates
+
+WITH duplicate_rows as (select *,
+ROW_NUMBER() OVER( PARTITION BY company,
+    location ,
+    industry ,
+    total_laid ,
+    percentage ,
+    date ,
+    stage ,
+    country ,
+    funds_raised_millions ) as row_num from layoffs_staging)
+    
+SELECT * FROM duplicate_rows
+WHERE row_num > 1
+
+-- Create another table so that we can remove the duplicates
+
+drop table if exists layoffs_staging2 ;
+create table layoffs_staging2(
+    company varchar(50),
+    location varchar(50),
+    industry varchar(50),
+    total_laid varchar(50),
+    percentage varchar(50),
+    date varchar(50),
+    stage varchar(50),
+    country varchar(50),
+    funds_raised_millions varchar(50),
+    row_num int
+)
+
+INSERT INTO layoffs_staging2( select *,
+ROW_NUMBER() OVER( PARTITION BY company,
+    location ,
+    industry ,
+    total_laid ,
+    percentage ,
+    date ,
+    stage ,
+    country ,
+    funds_raised_millions ) as row_num from layoffs_staging
+)
+
+SELECT * FROM layoffs_staging2
+
+-- 1. Remove the duplicates
+
+SELECT * FROM layoffs_staging2
+WHERE row_num > 1
+
+DELETE FROM layoffs_staging2
+WHERE row_num > 1
+
+
+-- Standarding the Data
+
+-- Company Column
+
+SELECT DISTINCT company, TRIM(company) FROM layoffs_staging2 ORDER BY company
+
+UPDATE layoffs_staging2
+SET company = TRIM(company)
+
+
+SELECT * FROM layoffs_staging2
+
+-- Country Column
+
+SELECT DISTINCT Country, TRIM(TRAILING '.' FROM country) FROM layoffs_staging2 ORDER BY 1
+
+UPDATE layoffs_staging2
+SET country = TRIM(TRAILING '.' FROM country)
+WHERE COUNTRY LIKE 'United States%'
+
+SELECT * FROM layoffs_staging2
+
+-- Industry Column
+
+SELECT DISTINCT industry FROM layoffs_staging2
+
+UPDATE layoffs_staging2
+SET industry = 'Crypto'
+WHERE industry LIKE ' Crypto%'
+
+SELECT * FROM layoffs_staging2
+
+-- Date Column
+
+SELECT 
+    date,
+    CASE 
+        WHEN date ~ '^\d{1,2}/\d{1,2}/\d{4}$' THEN TO_DATE(date, 'MM/DD/YYYY')
+        ELSE NULL 
+    END AS converted_date
+FROM 
+    layoffs_staging2;
+
+
+
+UPDATE layoffs_staging2
+SET date = (CASE 
+			WHEN date ~ '^\d{1,2}/\d{1,2}/\d{4}$' THEN TO_DATE(date, 'MM/DD/YYYY')
+			ELSE NULL 
+			END)
+
+
+SELECT * FROM layoffs_staging2;
+
+-- Now change the data type of date Column
+
+ALTER TABLE layoffs_staging2
+ALTER COLUMN date TYPE date USING date::date;
+
+
+SELECT * FROM layoffs_staging2;
+
+
+-- Handling NULL values
+
+SELECT * FROM layoffs_staging2
+WHERE total_laid = 'NULL' OR percentage = 'NULL';
+
+SELECT * FROM layoffs_staging2
+WHERE industry IS NULL OR industry= '' OR industry='NULL';
+
+SELECT * FROM layoffs_staging2
+WHERE company='Airbnb'
+
+UPDATE layoffs_staging2
+SET industry = NULL
+WHERE industry IS NULL OR industry= '' OR industry='NULL';
+
+SELECT l2.company, l2.industry FROM layoffs_staging2 l1
+JOIN layoffs_staging2 l2
+on l1.company=l2.company AND l1.location=l2.location
+WHERE (l1.industry IS NULL OR l1.industry= '' OR l1.industry='NULL')
+AND l2.industry IS NOT NULL;
+
+-- Populating the value to Industry Column
+
+UPDATE layoffs_staging2 l1
+SET industry = l2.industry
+FROM layoffs_staging2 l2
+WHERE l1.company = l2.company
+AND l1.industry IS NULL
+AND l2.industry IS NOT NULL;
+
+
+-- Handling total_laid and percentage Column
+
+UPDATE layoffs_staging2
+SET total_laid = NULL
+WHERE total_laid IS NULL OR total_laid='NULL';
+
+UPDATE layoffs_staging2
+SET percentage = NULL
+WHERE percentage IS NULL OR percentage='NULL';
+
+SELECT * FROM layoffs_staging2
+WHERE total_laid IS NULL AND percentage IS NULL;
+
+-- Delete NULL value rows
+
+DELETE FROM layoffs_staging2
+WHERE total_laid IS NULL AND percentage IS NULL;
+
+
+SELECT * FROM layoffs_staging2
+
+-- Drop Unwanted Column
+
+ALTER TABLE layoffs_staging2
+DROP COLUMN row_num
+
+SELECT * FROM layoffs_staging2
+
+
+
+
+
+
